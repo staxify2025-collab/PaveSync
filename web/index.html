@@ -32,6 +32,16 @@
   <title>PaveSync AI</title>
   <link rel="manifest" href="manifest.json">
   <script>
+    // Force unregister all old service worker caches to prevent stale code loading
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+  </script>
+  <script>
     window.startSpeechRecognition = function(onResult, onError, onEnd) {
       var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SpeechRecognition) {
