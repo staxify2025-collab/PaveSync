@@ -1250,7 +1250,7 @@ class _DashboardViewState extends State<DashboardView> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'PaveSync AI B2B Inspection Terminal',
+                              'PaveSync AI Inspection Terminal',
                               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20, color: Color(0xFF101828)),
                             ),
                             Text(
