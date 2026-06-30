@@ -28,6 +28,7 @@ class DbService {
 
     // Open local box
     await Hive.openBox<RoadSegment>(_boxName);
+    await Hive.openBox('settings_box');
     _initialized = true;
   }
 
@@ -92,6 +93,20 @@ class DbService {
     final unsynced = getUnsyncedSegments();
     for (var segment in unsynced) {
       await syncSegmentToCloud(segment);
+    }
+  }
+
+  static Future<void> saveApiKey(String key) async {
+    final box = Hive.box('settings_box');
+    await box.put('gemini_api_key', key);
+  }
+
+  static String getApiKey() {
+    try {
+      final box = Hive.box('settings_box');
+      return box.get('gemini_api_key', defaultValue: '') as String;
+    } catch (_) {
+      return '';
     }
   }
 }

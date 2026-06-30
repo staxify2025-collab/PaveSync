@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/chatbot_service.dart';
+import '../services/db_service.dart';
 
 class ChatbotView extends StatefulWidget {
   const ChatbotView({super.key});
@@ -18,6 +19,16 @@ class _ChatbotViewState extends State<ChatbotView> {
   ];
   bool _isLoading = false;
   final ScrollController _scrollController = ScrollController();
+
+  // API settings state
+  bool _showSettings = false;
+  final TextEditingController _apiKeyController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _apiKeyController.text = DbService.getApiKey();
+  }
 
   final List<String> _suggestions = [
     'FDOT Crack Rating Formula',
@@ -75,7 +86,7 @@ class _ChatbotViewState extends State<ChatbotView> {
         children: [
           // Gradient Chatbot Header
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [Color(0xFFEAECF0), Color(0xFFFAFAFA)],
@@ -94,26 +105,101 @@ class _ChatbotViewState extends State<ChatbotView> {
                   child: const Icon(Icons.psychology, color: Colors.amber),
                 ),
                 const SizedBox(width: 12),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'PaveQuery Compliance AI',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        color: Color(0xFF101828),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'PaveQuery Compliance AI',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Color(0xFF101828),
+                        ),
                       ),
-                    ),
-                    Text(
-                      'FHWA, AASHTO, ALDOT & FDOT Advisor',
-                      style: TextStyle(fontSize: 11, color: Color(0xFF475467)),
-                    ),
-                  ],
+                      Text(
+                        'FHWA, AASHTO, ALDOT & FDOT Advisor',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF475467)),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(_showSettings ? Icons.close : Icons.settings, size: 18, color: const Color(0xFF475467)),
+                  tooltip: 'Configure PaveQuery Settings',
+                  onPressed: () {
+                    setState(() {
+                      _showSettings = !_showSettings;
+                    });
+                  },
                 ),
               ],
             ),
           ),
+
+          // API Key Settings Panel
+          if (_showSettings)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: const Color(0xFFEAECF0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'PaveQuery Gemini API Key',
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFF101828)),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _apiKeyController,
+                          obscureText: true,
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF101828)),
+                          decoration: InputDecoration(
+                            hintText: 'Enter API Key for Online AI Model...',
+                            hintStyle: const TextStyle(color: Colors.black38),
+                            filled: true,
+                            fillColor: Colors.white,
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(6),
+                              borderSide: const BorderSide(color: Colors.black12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amber[800],
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        onPressed: () async {
+                          final key = _apiKeyController.text.trim();
+                          await DbService.saveApiKey(key);
+                          ChatbotService.init(key);
+                          setState(() {
+                            _showSettings = false;
+                          });
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('PaveQuery Gemini API Key saved successfully!'),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        child: const Text('Save', style: TextStyle(fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           
           // Chat Messages area
           Expanded(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'services/db_service.dart';
+import 'services/chatbot_service.dart';
 import 'views/dashboard_view.dart';
 
 void main() async {
@@ -8,6 +9,10 @@ void main() async {
   try {
     // Initialize offline database (Hive)
     await DbService.init();
+    
+    // Load saved API key and initialize ChatbotService
+    final apiKey = DbService.getApiKey();
+    ChatbotService.init(apiKey);
   } catch (e, stackTrace) {
     debugPrint('DATABASE INIT FAILURE: $e');
     debugPrint(stackTrace.toString());
