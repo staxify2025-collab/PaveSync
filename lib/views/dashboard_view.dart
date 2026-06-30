@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:geolocator/geolocator.dart';
 import '../models/distress.dart';
 import '../models/segment.dart';
 import '../services/db_service.dart';
@@ -21,7 +22,7 @@ class DashboardView extends StatefulWidget {
 
 class _DashboardViewState extends State<DashboardView> {
   // State variables
-  String _selectedState = 'FL'; // 'AL' = ALDOT, 'FL' = FDOT
+  String _selectedState = 'AL'; // 'AL' = ALDOT, 'FL' = FDOT
   bool _isDriveMode = true; // true = Drive (PASER), false = Walk (PCI)
   String _searchQuery = '';
   bool _isVoiceListening = false;
@@ -469,17 +470,85 @@ class _DashboardViewState extends State<DashboardView> {
     );
   }
 
+  Future<void> _getCurrentLocation(bool isStart) async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          throw 'Location permissions are denied';
+        }
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        throw 'Location permissions are permanently denied';
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 5),
+      );
+      
+      setState(() {
+        final coordString = '${position.latitude.toStringAsFixed(5)}, ${position.longitude.toStringAsFixed(5)}';
+        if (isStart) {
+          _startMileController.text = coordString;
+        } else {
+          _endMileController.text = coordString;
+        }
+      });
+    } catch (e) {
+      // Graceful fallback for simulator/desktop environments
+      setState(() {
+        final mockCoord = isStart ? '33.52066, -86.80249' : '33.52541, -86.79812';
+        if (isStart) {
+          _startMileController.text = mockCoord;
+        } else {
+          _endMileController.text = mockCoord;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('GPS Access Warning: $e. Loaded simulation coordinate.'),
+          backgroundColor: Colors.amber[800],
+        ),
+      );
+    }
+  }
+
   void _createNewSegment() {
     final roadName = _roadController.text.trim();
-    final startMP = double.tryParse(_startMileController.text) ?? 0.0;
-    final endMP = double.tryParse(_endMileController.text) ?? 0.1;
-    final length = (endMP - startMP).abs();
+    
+    double startVal = 0.0;
+    double endVal = 0.1;
+    double length = 0.1;
+
+    final startParts = _startMileController.text.split(',');
+    final endParts = _endMileController.text.split(',');
+
+    if (startParts.length == 2 && endParts.length == 2) {
+      final startLat = double.tryParse(startParts[0].trim());
+      final startLon = double.tryParse(startParts[1].trim());
+      final endLat = double.tryParse(endParts[0].trim());
+      final endLon = double.tryParse(endParts[1].trim());
+
+      if (startLat != null && startLon != null && endLat != null && endLon != null) {
+        final distanceInMeters = Geolocator.distanceBetween(startLat, startLon, endLat, endLon);
+        length = distanceInMeters / 1609.344; // Convert meters to miles
+        startVal = startLat;
+        endVal = endLat;
+      }
+    } else {
+      startVal = double.tryParse(_startMileController.text) ?? 0.0;
+      endVal = double.tryParse(_endMileController.text) ?? 0.1;
+      length = (endVal - startVal).abs();
+    }
 
     final newSegment = RoadSegment(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       roadName: roadName.isNotEmpty ? roadName : 'Unnamed Route',
-      startMilepost: startMP,
-      endMilepost: endMP,
+      startMilepost: startVal,
+      endMilepost: endVal,
       lengthInMiles: length,
       state: _selectedState,
       pavementMaterial: _pavMaterial,
@@ -1030,25 +1099,6 @@ class _DashboardViewState extends State<DashboardView> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('STATE DOT RULESET', style: TextStyle(fontSize: 9, color: Color(0xFF475467), fontWeight: FontWeight.bold)),
-                                const SizedBox(height: 6),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildToggleOption('Florida (FDOT)', _selectedState == 'FL', () {
-                                        setState(() => _selectedState = 'FL');
-                                      }),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: _buildToggleOption('Alabama (ALDOT)', _selectedState == 'AL', () {
-                                        setState(() => _selectedState = 'AL');
-                                      }),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-
                                 const Text('INSPECTION METHOD', style: TextStyle(fontSize: 9, color: Color(0xFF475467), fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 6),
                                 Row(
@@ -1082,7 +1132,13 @@ class _DashboardViewState extends State<DashboardView> {
                                       child: TextField(
                                         controller: _startMileController,
                                         style: const TextStyle(color: Color(0xFF101828), fontSize: 13),
-                                        decoration: _buildInputDecoration('Start MP'),
+                                        decoration: _buildInputDecoration('Start Position').copyWith(
+                                          suffixIcon: IconButton(
+                                            icon: const Icon(Icons.location_on, size: 18, color: Colors.amber),
+                                            tooltip: 'Get Start GPS',
+                                            onPressed: () => _getCurrentLocation(true),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                     const SizedBox(width: 8),
@@ -1090,7 +1146,13 @@ class _DashboardViewState extends State<DashboardView> {
                                       child: TextField(
                                         controller: _endMileController,
                                         style: const TextStyle(color: Color(0xFF101828), fontSize: 13),
-                                        decoration: _buildInputDecoration('End MP'),
+                                        decoration: _buildInputDecoration('End Position').copyWith(
+                                          suffixIcon: IconButton(
+                                            icon: const Icon(Icons.location_on, size: 18, color: Colors.amber),
+                                            tooltip: 'Get End GPS',
+                                            onPressed: () => _getCurrentLocation(false),
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ],
@@ -1399,25 +1461,6 @@ class _DashboardViewState extends State<DashboardView> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('STATE DOT RULESET', style: TextStyle(fontSize: 9, color: Color(0xFF475467), fontWeight: FontWeight.bold)),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildToggleOption('Florida (FDOT)', _selectedState == 'FL', () {
-                        setState(() => _selectedState = 'FL');
-                      }),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _buildToggleOption('Alabama (ALDOT)', _selectedState == 'AL', () {
-                        setState(() => _selectedState = 'AL');
-                      }),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
                 const Text('INSPECTION METHOD', style: TextStyle(fontSize: 9, color: Color(0xFF475467), fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 Row(
@@ -1451,7 +1494,13 @@ class _DashboardViewState extends State<DashboardView> {
                       child: TextField(
                         controller: _startMileController,
                         style: const TextStyle(color: Color(0xFF101828), fontSize: 13),
-                        decoration: _buildInputDecoration('Start MP'),
+                        decoration: _buildInputDecoration('Start Position').copyWith(
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.location_on, size: 18, color: Colors.amber),
+                            tooltip: 'Get Start GPS',
+                            onPressed: () => _getCurrentLocation(true),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1459,7 +1508,13 @@ class _DashboardViewState extends State<DashboardView> {
                       child: TextField(
                         controller: _endMileController,
                         style: const TextStyle(color: Color(0xFF101828), fontSize: 13),
-                        decoration: _buildInputDecoration('End MP'),
+                        decoration: _buildInputDecoration('End Position').copyWith(
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.location_on, size: 18, color: Colors.amber),
+                            tooltip: 'Get End GPS',
+                            onPressed: () => _getCurrentLocation(false),
+                          ),
+                        ),
                       ),
                     ),
                   ],
