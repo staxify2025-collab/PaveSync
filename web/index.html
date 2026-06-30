@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="A new Flutter project.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="pavesync_ai">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>pavesync_ai</title>
+  <link rel="manifest" href="manifest.json">
+  <script>
+    window.startSpeechRecognition = function(onResult, onError, onEnd) {
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) {
+        onError("Speech recognition not supported in this browser.");
+        return;
+      }
+      var recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = function(event) {
+        var text = event.results[0][0].transcript;
+        onResult(text);
+      };
+
+      recognition.onerror = function(event) {
+        onError(event.error);
+      };
+
+      recognition.onend = function() {
+        onEnd();
+      };
+
+      recognition.start();
+      window.activeRecognition = recognition;
+    };
+
+    window.stopSpeechRecognition = function() {
+      if (window.activeRecognition) {
+        window.activeRecognition.stop();
+      }
+    };
+
+    window.startVibrationSensor = function(onSpike, onError) {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission()
+          .then(permissionState => {
+            if (permissionState === 'granted') {
+              window.initDeviceMotionListener(onSpike);
+            } else {
+              onError("Motion permission denied.");
+            }
+          })
+          .catch(function(err) {
+            onError("Motion sensors error: " + err);
+          });
+      } else {
+        window.initDeviceMotionListener(onSpike);
+      }
+    };
+
+    window.initDeviceMotionListener = function(onSpike) {
+      window.lastAccelerationSpike = 0;
+      window.deviceMotionHandler = function(event) {
+        var acc = event.accelerationIncludingGravity || event.acceleration;
+        if (!acc) return;
+        
+        var x = acc.x || 0;
+        var y = acc.y || 0;
+        var z = acc.z || 0;
+        var magnitude = Math.sqrt(x*x + y*y + z*z);
+        
+        if (magnitude > 14.8 || magnitude < 4.8) {
+          var now = Date.now();
+          if (now - window.lastAccelerationSpike > 1500) {
+            window.lastAccelerationSpike = now;
+            onSpike(magnitude);
+          }
+        }
+      };
+      window.addEventListener('devicemotion', window.deviceMotionHandler);
+    };
+
+    window.stopVibrationSensor = function() {
+      if (window.deviceMotionHandler) {
+        window.removeEventListener('devicemotion', window.deviceMotionHandler);
+      }
+    };
+
+    window.startVisualRoadAnalyzer = function(onDefectDetected, onError) {
+      window.roadAnalyzerActive = true;
+      
+      function findVideoElement() {
+        var videos = document.getElementsByTagName('video');
+        if (videos.length > 0) return videos[0];
+        return null;
+      }
+      
+      var canvas = document.createElement('canvas');
+      var ctx = canvas.getContext('2d');
+      
+      function analyzeFrame() {
+        if (!window.roadAnalyzerActive) return;
+        
+        var video = findVideoElement();
+        if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = 160;
+          canvas.height = 120;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          var data = imgData.data;
+          
+          var darkPixels = 0;
+          var brightPixels = 0;
+          var edgeCount = 0;
+          
+          var startY = Math.floor(canvas.height * 0.5);
+          var endY = canvas.height;
+          var startX = Math.floor(canvas.width * 0.1);
+          var endX = Math.floor(canvas.width * 0.9);
+          
+          for (var y = startY; y < endY; y += 2) {
+            for (var x = startX; x < endX; x += 2) {
+              var idx = (y * canvas.width + x) * 4;
+              var r = data[idx];
+              var g = data[idx+1];
+              var b = data[idx+2];
+              
+              var brightness = 0.299*r + 0.587*g + 0.114*b;
+              
+              if (brightness > 200) {
+                brightPixels++;
+              } else if (brightness < 45) {
+                darkPixels++;
+              }
+              
+              var nextIdx = idx + 4;
+              var nr = data[nextIdx];
+              var ng = data[nextIdx+1];
+              var nb = data[nextIdx+2];
+              var nextBrightness = 0.299*nr + 0.587*ng + 0.114*nb;
+              
+              if (Math.abs(brightness - nextBrightness) > 40) {
+                edgeCount++;
+              }
+            }
+          }
+          
+          if (edgeCount > 180 && darkPixels > 80) {
+            onDefectDetected("Alligator Cracking", 0.88);
+          } else if (edgeCount > 90 && edgeCount <= 180) {
+            onDefectDetected("Block Cracking", 0.79);
+          } else if (darkPixels > 220) {
+            onDefectDetected("Pothole", 0.94);
+          } else if (darkPixels > 120 && edgeCount < 50) {
+            onDefectDetected("Depression", 0.74);
+          }
+        }
+        
+        setTimeout(analyzeFrame, 250); // Loop 4 times per second to keep CPU low
+      }
+      
+      analyzeFrame();
+    };
+
+    window.stopVisualRoadAnalyzer = function() {
+      window.roadAnalyzerActive = false;
+    };
+  </script>
+</head>
+<body>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
