@@ -34,6 +34,22 @@ class _DashboardViewState extends State<DashboardView> {
   bool _showSplash = true;
   bool _isChatOpen = true;
 
+  // Auth state variables
+  bool _showLoginView = false;
+  bool _showSignUpView = false;
+  bool _showStripeView = false;
+  bool _isAuthLoading = false;
+  String _authEmail = '';
+  String _authPassword = '';
+  String _authBusinessName = '';
+  String _errorMessage = '';
+
+  // Stripe controllers
+  final _cardNumberController = TextEditingController(text: '4242 4242 4242 4242');
+  final _expiryController = TextEditingController(text: '12/28');
+  final _cvvController = TextEditingController(text: '345');
+  final _zipController = TextEditingController(text: '35203');
+
   // New segment form controllers
   final _roadController = TextEditingController(text: 'I-95 Northbound');
   final _startMileController = TextEditingController(text: '120.4');
@@ -47,15 +63,6 @@ class _DashboardViewState extends State<DashboardView> {
   void initState() {
     super.initState();
     _loadSegments();
-
-    // Auto-dismiss splash screen after 2.5 seconds
-    Future.delayed(const Duration(milliseconds: 2500), () {
-      if (mounted) {
-        setState(() {
-          _showSplash = false;
-        });
-      }
-    });
   }
 
   void _loadSegments() {
@@ -65,6 +72,401 @@ class _DashboardViewState extends State<DashboardView> {
         _activeSegment = _segmentsList.first;
       }
     });
+  }
+
+  void _handleLogin() {
+    if (_authEmail == 'staxify2025@gmail.com' && _authPassword == 'STACKSONSTACKS1984') {
+      setState(() {
+        _isAuthLoading = true;
+        _errorMessage = '';
+      });
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        if (mounted) {
+          setState(() {
+            _isAuthLoading = false;
+            _showSplash = false; // Logged in!
+          });
+        }
+      });
+    } else {
+      setState(() {
+        _errorMessage = 'Invalid credentials. Use staxify2025@gmail.com for dev accounts.';
+      });
+    }
+  }
+
+  void _handleStripeSubscription() {
+    setState(() {
+      _isAuthLoading = true;
+      _errorMessage = '';
+    });
+    // Simulate Stripe payment processing
+    Future.delayed(const Duration(milliseconds: 2200), () {
+      if (mounted) {
+        setState(() {
+          _isAuthLoading = false;
+          _showSplash = false; // Successfully subscribed and logged in!
+        });
+      }
+    });
+  }
+
+  Widget _buildAuthContent() {
+    if (_isAuthLoading) {
+      return const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(height: 16),
+          CircularProgressIndicator(color: Colors.amber),
+          SizedBox(height: 24),
+          Text(
+            'Securely processing request...',
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+          SizedBox(height: 16),
+        ],
+      );
+    }
+
+    if (_showLoginView) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'LOG IN',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.0),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          if (_errorMessage.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+              ),
+              child: Text(
+                _errorMessage,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          TextField(
+            onChanged: (val) => _authEmail = val.trim(),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Email address',
+              hintStyle: const TextStyle(color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            onChanged: (val) => _authPassword = val,
+            obscureText: true,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Password',
+              hintStyle: const TextStyle(color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber[800],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _handleLogin,
+            child: const Text('Access Terminal', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 14),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _showLoginView = false;
+                _showSignUpView = false;
+                _showStripeView = false;
+                _errorMessage = '';
+              });
+            },
+            child: const Text('Back to Main Screen', style: TextStyle(color: Colors.amber)),
+          ),
+        ],
+      );
+    }
+
+    if (_showSignUpView) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'CREATE ACCOUNT',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.0),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 20),
+          if (_errorMessage.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.redAccent.withOpacity(0.5)),
+              ),
+              child: Text(
+                _errorMessage,
+                style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          TextField(
+            onChanged: (val) => _authBusinessName = val.trim(),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Municipality or Business name',
+              hintStyle: const TextStyle(color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            onChanged: (val) => _authEmail = val.trim(),
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Email address',
+              hintStyle: const TextStyle(color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            onChanged: (val) => _authPassword = val,
+            obscureText: true,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'Password',
+              hintStyle: const TextStyle(color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber[800],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: () {
+              if (_authBusinessName.isEmpty || _authEmail.isEmpty || _authPassword.isEmpty) {
+                setState(() {
+                  _errorMessage = 'All fields are required.';
+                });
+                return;
+              }
+              setState(() {
+                _showSignUpView = false;
+                _showStripeView = true;
+                _errorMessage = '';
+              });
+            },
+            child: const Text('Continue to Billing', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 14),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                _showLoginView = false;
+                _showSignUpView = false;
+                _showStripeView = false;
+                _errorMessage = '';
+              });
+            },
+            child: const Text('Back to Main Screen', style: TextStyle(color: Colors.amber)),
+          ),
+        ],
+      );
+    }
+
+    if (_showStripeView) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_outline, color: Colors.green[400], size: 16),
+              const SizedBox(width: 6),
+              const Text(
+                'SECURE STRIPE CHECKOUT',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 0.8),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF101828),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('PaveSync AI B2B License', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    SizedBox(height: 2),
+                    Text('Real-Time Visual Road Grading Plan', style: TextStyle(color: Colors.grey, fontSize: 10)),
+                  ],
+                ),
+                Text('\$99/mo', style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          const Text('CARD INFORMATION', style: TextStyle(color: Colors.grey, fontSize: 9, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _cardNumberController,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.credit_card, size: 16, color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _expiryController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'MM/YY',
+                    filled: true,
+                    fillColor: const Color(0xFF101828),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextField(
+                  controller: _cvvController,
+                  style: const TextStyle(color: Colors.white, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'CVC',
+                    filled: true,
+                    fillColor: const Color(0xFF101828),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _zipController,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            decoration: InputDecoration(
+              hintText: 'ZIP Code',
+              filled: true,
+              fillColor: const Color(0xFF101828),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.amber[800],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            onPressed: _handleStripeSubscription,
+            child: const Text('Start Subscription', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Secured by Stripe. Cancel anytime in your dashboard portal.',
+            style: TextStyle(color: Colors.grey, fontSize: 9),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.amber[800],
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            elevation: 4,
+          ),
+          onPressed: () {
+            setState(() {
+              _showLoginView = true;
+            });
+          },
+          child: const Text('LOGIN TO TERMINAL', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+        ),
+        const SizedBox(height: 14),
+        OutlinedButton(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.amber,
+            side: const BorderSide(color: Colors.amber, width: 1.5),
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+          onPressed: () {
+            setState(() {
+              _showSignUpView = true;
+            });
+          },
+          child: const Text('CREATE ACCOUNT & SUBSCRIBE', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 0.8)),
+        ),
+      ],
+    );
   }
 
   void _createNewSegment() {
@@ -258,77 +660,90 @@ class _DashboardViewState extends State<DashboardView> {
       return Scaffold(
         backgroundColor: const Color(0xFF101828),
         body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TweenAnimationBuilder<double>(
-                tween: Tween<double>(begin: 0.95, end: 1.05),
-                duration: const Duration(milliseconds: 1000),
-                curve: Curves.easeInOut,
-                builder: (context, scale, child) {
-                  return Transform.scale(
-                    scale: scale,
-                    child: child,
-                  );
-                },
-                child: Container(
-                  width: 140,
-                  height: 140,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.amber.withOpacity(0.5), width: 2),
-                    image: const DecorationImage(
-                      image: AssetImage('assets/images/pavesync_logo.png'),
-                      fit: BoxFit.cover,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0.95, end: 1.05),
+                  duration: const Duration(milliseconds: 1200),
+                  curve: Curves.easeInOut,
+                  builder: (context, scale, child) {
+                    return Transform.scale(
+                      scale: scale,
+                      child: child,
+                    );
+                  },
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(26),
+                      border: Border.all(color: Colors.amber.withOpacity(0.5), width: 2),
+                      image: const DecorationImage(
+                        image: AssetImage('assets/images/pavesync_logo.png'),
+                        fit: BoxFit.cover,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amber.withOpacity(0.15),
+                          blurRadius: 20,
+                          spreadRadius: 5,
+                        ),
+                      ],
                     ),
-                    boxShadow: [
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'PaveSync AI',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2.0,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Next-Gen Road Quality & Compliance Terminal',
+                  style: TextStyle(
+                    color: Colors.grey[400],
+                    fontSize: 13,
+                    letterSpacing: 0.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 36),
+                Container(
+                  width: 420,
+                  padding: const EdgeInsets.all(28),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1D2939),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white12, width: 1),
+                    boxShadow: const [
                       BoxShadow(
-                        color: Colors.amber.withOpacity(0.15),
-                        blurRadius: 20,
-                        spreadRadius: 5,
+                        color: Colors.black26,
+                        blurRadius: 15,
+                        offset: Offset(0, 8),
                       ),
                     ],
                   ),
+                  child: _buildAuthContent(),
                 ),
-              ),
-              const SizedBox(height: 32),
-              const Text(
-                'PAVESYNC AI',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 2.5,
+                const SizedBox(height: 48),
+                Text(
+                  'by Staxify, LLC | GovTech & ConTech B2B',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 10,
+                    letterSpacing: 1.0,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Next-Gen Road Quality & Compliance Terminal',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 12,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              const SizedBox(height: 48),
-              const SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(
-                  color: Colors.amber,
-                  strokeWidth: 2.5,
-                ),
-              ),
-              const SizedBox(height: 64),
-              Text(
-                'by Staxify, LLC | GovTech & ConTech B2B',
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 10,
-                  letterSpacing: 1.0,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );

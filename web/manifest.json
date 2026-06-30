@@ -1,11 +1,11 @@
 {
-    "name": "pavesync_ai",
-    "short_name": "pavesync_ai",
+    "name": "PaveSync AI",
+    "short_name": "PaveSync AI",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#101828",
+    "theme_color": "#101828",
+    "description": "Next-Gen Road Compliance Terminal",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
