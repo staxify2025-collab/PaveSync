@@ -25,7 +25,7 @@ When answering, give precise rules, severity level definitions, and standard mat
   static void init(String? apiKey) {
     if (apiKey != null && apiKey.isNotEmpty) {
       _model = GenerativeModel(
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.5-flash',
         apiKey: apiKey,
         systemInstruction: Content.system(_systemPrompt),
       );
