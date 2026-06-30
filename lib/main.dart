@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'services/db_service.dart';
 import 'services/chatbot_service.dart';
 import 'views/dashboard_view.dart';
+import 'config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,7 +13,8 @@ void main() async {
     
     // Load saved API key and initialize ChatbotService
     final apiKey = DbService.getApiKey();
-    ChatbotService.init(apiKey);
+    final keyToUse = apiKey.isNotEmpty ? apiKey : defaultGeminiApiKey;
+    ChatbotService.init(keyToUse);
   } catch (e, stackTrace) {
     debugPrint('DATABASE INIT FAILURE: $e');
     debugPrint(stackTrace.toString());

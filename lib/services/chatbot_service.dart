@@ -1,4 +1,6 @@
 import 'package:google_generative_ai/google_generative_ai.dart';
+import '../config.dart';
+import 'db_service.dart';
 
 class ChatbotService {
   // PaveQuery specialized knowledge system prompt
@@ -33,6 +35,14 @@ When answering, give precise rules, severity level definitions, and standard mat
 
   /// Sends a message to Gemini or uses a local knowledge base fallback if offline/no key
   static Future<String> sendMessage(String message) async {
+    if (_model == null) {
+      final savedKey = DbService.getApiKey();
+      final keyToUse = savedKey.isNotEmpty ? savedKey : defaultGeminiApiKey;
+      if (keyToUse.isNotEmpty && !keyToUse.contains('12345678')) {
+        init(keyToUse);
+      }
+    }
+
     if (_model != null && _chatSession != null) {
       try {
         final response = await _chatSession!.sendMessage(Content.text(message));
