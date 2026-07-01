@@ -52,22 +52,23 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
     }
     
     _visionService = AiVisionService();
-    // Only start mock scanner if NO real video/camera is active
+
+    // ONLY use mock scanner when there is NO real video AND no physical camera.
+    // When a video is loaded, ALL detections come exclusively from the real
+    // JS computer vision pipeline (VisionAnalyzerService).
     if (widget.videoUrl == null) {
       _visionService.startLiveScanner();
+      _visionService.detectionStream.listen((detections) {
+        if (mounted && _isScanning) {
+          setState(() {
+            _currentDetections = detections;
+            for (var det in detections) {
+              widget.onDefectDetected(det);
+            }
+          });
+        }
+      });
     }
-    
-    _visionService.detectionStream.listen((detections) {
-      if (mounted && _isScanning) {
-        setState(() {
-          _currentDetections = detections;
-          // Trigger callbacks for new distress detections
-          for (var det in detections) {
-            widget.onDefectDetected(det);
-          }
-        });
-      }
-    });
 
     _animationController = AnimationController(
       vsync: this,
@@ -76,8 +77,8 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
 
     if (widget.videoUrl == null) {
       _initCamera();
+      _startVibrationSensor(); // Vibration only relevant for live driving, not video playback
     }
-    _startVibrationSensor();
     _startVisualRoadAnalyzer();
   }
 
@@ -185,8 +186,8 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
       if (_isScanning) {
         if (widget.videoUrl == null) {
           _visionService.startLiveScanner();
+          _startVibrationSensor();
         }
-        _startVibrationSensor();
         _startVisualRoadAnalyzer();
         _simulatedSpeed = widget.isDriveMode ? 35.0 : 2.5;
       } else {
