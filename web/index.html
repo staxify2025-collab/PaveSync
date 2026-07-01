@@ -133,49 +133,64 @@
       
       var canvas = document.createElement('canvas');
       var ctx = canvas.getContext('2d');
-      // Cooldown: prevent spamming detections. Min 1.5s between reports.
       var lastDetectionTime = 0;
       
-      function rgbToHsv(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        var max = Math.max(r, g, b), min = Math.min(r, g, b);
-        var h, s, v = max;
-        var d = max - min;
-        s = max === 0 ? 0 : d / max;
-        if (max === min) { h = 0; }
-        else {
-          switch (max) {
-            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-            case g: h = (b - r) / d + 2; break;
-            case b: h = (r - g) / d + 4; break;
-          }
-          h /= 6;
+      // ── Pixel classifiers ──────────────────────────────────────────
+      
+      // Check if pixel is NOT road (reject these first)
+      function isNonRoad(r, g, b) {
+        // Green grass / vegetation: green channel dominates
+        if (g > r && g > b && g > 60 && (g - r) > 10) return true;
+        // Brown / dead grass / dirt / earth: warm hue, moderate sat
+        // Brown tones: R > G > B, with warmth
+        if (r > g && r > b && (r - b) > 30 && g > 50 && g < 180) {
+          var warmRatio = r / Math.max(b, 1);
+          if (warmRatio > 1.4) return true;
         }
-        return { h: h * 360, s: s, v: v };
+        // Sky: bright with blue dominance
+        var brightness = 0.299*r + 0.587*g + 0.114*b;
+        if (brightness > 140 && b > r && b > 80) return true;
+        // Bright white / clouds
+        if (r > 200 && g > 200 && b > 200) return true;
+        // Yellow paint lines
+        if (r > 150 && g > 130 && b < 100 && r > b + 60) return true;
+        // White paint lines
+        if (r > 180 && g > 180 && b > 180 && Math.abs(r-g) < 25 && Math.abs(g-b) < 25) return true;
+        return false;
       }
       
-      // Classify a pixel as road surface (asphalt)
-      function isRoadPixel(r, g, b) {
-        var hsv = rgbToHsv(r, g, b);
-        // Asphalt is low saturation, low-to-mid brightness, grayish
-        if (hsv.s > 0.35) return false;   // Too colorful (grass, sky, paint)
-        if (hsv.v > 0.75) return false;    // Too bright (sky, clouds, white paint)
-        if (hsv.v < 0.05) return false;    // Pure black (letterbox/border)
+      // Check if pixel looks like asphalt (dark, grayish, low saturation)
+      function isAsphalt(r, g, b) {
+        var brightness = 0.299*r + 0.587*g + 0.114*b;
+        // Asphalt is typically brightness 20-140, grayish (channels close together)
+        if (brightness < 15 || brightness > 150) return false;
+        var maxC = Math.max(r, g, b);
+        var minC = Math.min(r, g, b);
+        var saturation = maxC > 0 ? (maxC - minC) / maxC : 0;
+        // Asphalt has very low color saturation (it's gray)
+        if (saturation > 0.25) return false;
         return true;
       }
       
-      // Classify non-road pixels to filter out
-      function isGrass(r, g, b) {
-        return g > r && g > b && g > 70 && (g - r) > 15;
-      }
-      function isSky(r, g, b) {
-        var brightness = 0.299*r + 0.587*g + 0.114*b;
-        return brightness > 160 && b > r && b > 100;
-      }
-      function isPaint(r, g, b) {
-        var isYellow = (r > 150 && g > 130 && b < 100 && r > b + 60);
-        var isWhite = (r > 190 && g > 190 && b > 190);
-        return isYellow || isWhite;
+      // ── Perspective-aware trapezoid ROI ─────────────────────────────
+      // In a dashcam view, the road forms a trapezoid:
+      //   - Bottom of frame: road spans roughly center 60%
+      //   - Higher up: road narrows toward vanishing point
+      // This prevents analyzing grass/fields on the sides
+      function isInsideRoadTrapezoid(x, y, W, H) {
+        var roiTopY = Math.floor(H * 0.45);
+        var roiBottomY = H - 4;
+        if (y < roiTopY || y > roiBottomY) return false;
+        
+        // Linear interpolation of road width based on y position
+        var t = (y - roiTopY) / (roiBottomY - roiTopY); // 0 at top, 1 at bottom
+        
+        // At bottom (t=1): road spans 20% to 80% of width
+        // At top (t=0): road spans 38% to 62% of width (narrow vanishing point)
+        var leftBound = W * (0.38 - t * 0.18);   // 0.38 → 0.20
+        var rightBound = W * (0.62 + t * 0.18);   // 0.62 → 0.80
+        
+        return x >= leftBound && x <= rightBound;
       }
       
       function analyzeFrame() {
@@ -183,7 +198,6 @@
         
         var video = findVideoElement();
         if (video && video.readyState === video.HAVE_ENOUGH_DATA) {
-          // Use higher resolution for accuracy
           var W = 320;
           var H = 240;
           canvas.width = W;
@@ -193,77 +207,84 @@
           var imgData = ctx.getImageData(0, 0, W, H);
           var data = imgData.data;
           
-          // STEP 1: Build a road mask — identify which pixels are road surface.
-          // Only analyze the lower 55% of the frame (road area in a dashcam).
           var roiTopY = Math.floor(H * 0.45);
-          var roiBottomY = H - 2;
-          var roiLeftX = Math.floor(W * 0.08);
-          var roiRightX = Math.floor(W * 0.92);
+          var roiBottomY = H - 4;
           
-          // Road pixel map (1 = road, 0 = not road)
+          // ── STEP 1: Build road mask using trapezoid ROI ──
           var roadMask = new Uint8Array(W * H);
           var roadPixelCount = 0;
           
           for (var y = roiTopY; y < roiBottomY; y++) {
-            for (var x = roiLeftX; x < roiRightX; x++) {
+            for (var x = 0; x < W; x++) {
+              // Skip pixels outside the road trapezoid
+              if (!isInsideRoadTrapezoid(x, y, W, H)) continue;
+              
               var idx = (y * W + x) * 4;
               var r = data[idx], g = data[idx+1], b = data[idx+2];
-              if (isGrass(r, g, b) || isSky(r, g, b) || isPaint(r, g, b)) {
-                roadMask[y * W + x] = 0;
-              } else if (isRoadPixel(r, g, b)) {
+              
+              // First reject anything that's clearly not road
+              if (isNonRoad(r, g, b)) continue;
+              
+              // Then confirm it looks like asphalt
+              if (isAsphalt(r, g, b)) {
                 roadMask[y * W + x] = 1;
                 roadPixelCount++;
               }
             }
           }
           
-          // If we can't detect enough road surface, skip this frame (camera not pointing at road)
-          var roiArea = (roiBottomY - roiTopY) * (roiRightX - roiLeftX);
-          if (roadPixelCount < roiArea * 0.15) {
-            setTimeout(analyzeFrame, 400);
+          // Need a minimum amount of road surface to analyze
+          if (roadPixelCount < 800) {
+            setTimeout(analyzeFrame, 500);
             return;
           }
           
-          // STEP 2: Within the road mask, find defect pixels.
-          // Defects on asphalt appear as either:
-          //   (a) Very dark patches (potholes, deep cracks) — brightness < 30
-          //   (b) High local contrast edges (surface cracks) — large gradient vs neighbors
-          //   (c) Rough texture anomalies — brightness variance in local neighborhood
-          
-          // Defect pixel map (1 = potential defect, 0 = normal road)
+          // ── STEP 2: Find defect pixels within road mask ──
+          // Defects are abnormally dark or high-contrast pixels ON the road
           var defectMask = new Uint8Array(W * H);
           var defectPixelCount = 0;
           
+          // First compute average road brightness for adaptive thresholding
+          var roadBrightnessSum = 0;
+          for (var y = roiTopY; y < roiBottomY; y++) {
+            for (var x = 0; x < W; x++) {
+              if (roadMask[y * W + x] !== 1) continue;
+              var idx = (y * W + x) * 4;
+              roadBrightnessSum += 0.299*data[idx] + 0.587*data[idx+1] + 0.114*data[idx+2];
+            }
+          }
+          var avgRoadBrightness = roadBrightnessSum / Math.max(roadPixelCount, 1);
+          
+          // Adaptive dark threshold: a defect must be significantly darker than average road
+          var darkThreshold = Math.max(avgRoadBrightness * 0.45, 15);
+          
           for (var y = roiTopY + 1; y < roiBottomY - 1; y++) {
-            for (var x = roiLeftX + 1; x < roiRightX - 1; x++) {
+            for (var x = 1; x < W - 1; x++) {
               if (roadMask[y * W + x] !== 1) continue;
               
               var idx = (y * W + x) * 4;
               var r = data[idx], g = data[idx+1], b = data[idx+2];
               var brightness = 0.299*r + 0.587*g + 0.114*b;
               
-              // Compute local contrast: compare with 4 neighbors
-              var neighbors = [
-                ((y-1) * W + x) * 4,
-                ((y+1) * W + x) * 4,
-                (y * W + (x-1)) * 4,
-                (y * W + (x+1)) * 4
-              ];
+              // Only flag pixels significantly darker than average road
+              var isDark = brightness < darkThreshold;
+              
+              // Or high local contrast (crack edges)
               var sumDiff = 0;
-              var neighborCount = 0;
+              var nCount = 0;
+              var nOffsets = [[-1,0],[1,0],[0,-1],[0,1]];
               for (var n = 0; n < 4; n++) {
-                var ni = neighbors[n];
-                if (ni >= 0 && ni < data.length - 2) {
+                var ny = y + nOffsets[n][0];
+                var nx = x + nOffsets[n][1];
+                if (roadMask[ny * W + nx] === 1) {
+                  var ni = (ny * W + nx) * 4;
                   var nb = 0.299*data[ni] + 0.587*data[ni+1] + 0.114*data[ni+2];
                   sumDiff += Math.abs(brightness - nb);
-                  neighborCount++;
+                  nCount++;
                 }
               }
-              var avgContrast = neighborCount > 0 ? sumDiff / neighborCount : 0;
-              
-              // Mark as defect if: very dark patch OR high local contrast on road
-              var isDark = brightness < 28;
-              var isHighContrast = avgContrast > 25 && brightness < 120;
+              var avgContrast = nCount > 0 ? sumDiff / nCount : 0;
+              var isHighContrast = avgContrast > 30 && brightness < avgRoadBrightness;
               
               if (isDark || isHighContrast) {
                 defectMask[y * W + x] = 1;
@@ -272,137 +293,116 @@
             }
           }
           
-          // If defect density is too low, road is clean — no detection
-          var roadDensity = roadPixelCount > 0 ? defectPixelCount / roadPixelCount : 0;
-          if (roadDensity < 0.02) {
-            // Road is in good condition, no defects to report
-            setTimeout(analyzeFrame, 400);
+          // If defect density is too low, road is clean
+          var defectRatio = defectPixelCount / Math.max(roadPixelCount, 1);
+          if (defectRatio < 0.03) {
+            setTimeout(analyzeFrame, 500);
             return;
           }
           
-          // STEP 3: Connected component analysis on defect pixels to find clusters.
-          // Use flood fill to group adjacent defect pixels into regions.
+          // ── STEP 3: Connected component clustering ──
           var visited = new Uint8Array(W * H);
           var clusters = [];
           
           for (var y = roiTopY; y < roiBottomY; y++) {
-            for (var x = roiLeftX; x < roiRightX; x++) {
-              if (defectMask[y * W + x] === 1 && !visited[y * W + x]) {
-                // BFS flood fill
-                var queue = [{x: x, y: y}];
-                visited[y * W + x] = 1;
-                var minX = x, maxX = x, minY = y, maxY = y;
-                var clusterSize = 0;
-                var brightnessSum = 0;
+            for (var x = 0; x < W; x++) {
+              if (defectMask[y * W + x] !== 1 || visited[y * W + x]) continue;
+              
+              var queue = [{x: x, y: y}];
+              visited[y * W + x] = 1;
+              var cMinX = x, cMaxX = x, cMinY = y, cMaxY = y;
+              var cSize = 0;
+              var cBrightSum = 0;
+              
+              while (queue.length > 0) {
+                var p = queue.shift();
+                cSize++;
+                var pidx = (p.y * W + p.x) * 4;
+                cBrightSum += 0.299*data[pidx] + 0.587*data[pidx+1] + 0.114*data[pidx+2];
+                if (p.x < cMinX) cMinX = p.x;
+                if (p.x > cMaxX) cMaxX = p.x;
+                if (p.y < cMinY) cMinY = p.y;
+                if (p.y > cMaxY) cMaxY = p.y;
                 
-                while (queue.length > 0) {
-                  var p = queue.shift();
-                  clusterSize++;
-                  var pidx = (p.y * W + p.x) * 4;
-                  brightnessSum += 0.299*data[pidx] + 0.587*data[pidx+1] + 0.114*data[pidx+2];
-                  
-                  if (p.x < minX) minX = p.x;
-                  if (p.x > maxX) maxX = p.x;
-                  if (p.y < minY) minY = p.y;
-                  if (p.y > maxY) maxY = p.y;
-                  
-                  // Check 8-connected neighbors
-                  var dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
-                  for (var d = 0; d < dirs.length; d++) {
-                    var nx = p.x + dirs[d][0];
-                    var ny = p.y + dirs[d][1];
-                    if (nx >= roiLeftX && nx < roiRightX && ny >= roiTopY && ny < roiBottomY) {
-                      if (defectMask[ny * W + nx] === 1 && !visited[ny * W + nx]) {
-                        visited[ny * W + nx] = 1;
-                        queue.push({x: nx, y: ny});
-                      }
+                var dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+                for (var d = 0; d < dirs.length; d++) {
+                  var nx = p.x + dirs[d][0];
+                  var ny = p.y + dirs[d][1];
+                  if (nx >= 0 && nx < W && ny >= roiTopY && ny < roiBottomY) {
+                    if (defectMask[ny * W + nx] === 1 && !visited[ny * W + nx]) {
+                      visited[ny * W + nx] = 1;
+                      queue.push({x: nx, y: ny});
                     }
                   }
                 }
-                
-                // Only consider clusters with at least 12 pixels (noise filter)
-                if (clusterSize >= 12) {
-                  clusters.push({
-                    minX: minX, maxX: maxX,
-                    minY: minY, maxY: maxY,
-                    size: clusterSize,
-                    avgBrightness: brightnessSum / clusterSize
-                  });
-                }
+              }
+              
+              // Require minimum 20 pixels to be a real defect (noise filter)
+              if (cSize >= 20) {
+                clusters.push({
+                  minX: cMinX, maxX: cMaxX, minY: cMinY, maxY: cMaxY,
+                  size: cSize, avgBright: cBrightSum / cSize
+                });
               }
             }
           }
           
-          // STEP 4: Classify and report the largest cluster(s).
+          // ── STEP 4: Classify and report ──
           if (clusters.length === 0) {
-            setTimeout(analyzeFrame, 400);
+            setTimeout(analyzeFrame, 500);
             return;
           }
           
-          // Cooldown check
           var now = Date.now();
-          if (now - lastDetectionTime < 1500) {
-            setTimeout(analyzeFrame, 400);
+          if (now - lastDetectionTime < 2000) {
+            setTimeout(analyzeFrame, 500);
             return;
           }
           
-          // Sort clusters by size (largest first)
           clusters.sort(function(a, b) { return b.size - a.size; });
           
-          // Report up to 2 largest clusters
-          var reported = 0;
-          for (var i = 0; i < Math.min(clusters.length, 2); i++) {
-            var c = clusters[i];
-            var bboxW = (c.maxX - c.minX);
-            var bboxH = (c.maxY - c.minY);
-            var aspectRatio = bboxW / Math.max(bboxH, 1);
-            var density = c.size / Math.max(bboxW * bboxH, 1);
+          // Only report the single largest cluster per frame to avoid clutter
+          var c = clusters[0];
+          var bw = c.maxX - c.minX;
+          var bh = c.maxY - c.minY;
+          var aspect = bw / Math.max(bh, 1);
+          var density = c.size / Math.max(bw * bh, 1);
+          
+          var label = "";
+          var confidence = 0;
+          
+          if (c.avgBright < darkThreshold * 0.7 && density > 0.3 && bw > 10 && bh > 10) {
+            label = "Pothole";
+            confidence = Math.min(0.72 + density * 0.25, 0.96);
+          } else if (aspect > 4.0 && bw > 35) {
+            label = "Longitudinal Crack";
+            confidence = Math.min(0.68 + (bw / W) * 0.25, 0.92);
+          } else if (aspect < 0.25 && bh > 25) {
+            label = "Transverse Crack";
+            confidence = Math.min(0.68 + (bh / H) * 0.25, 0.90);
+          } else if (c.size > 200 && density > 0.18) {
+            label = "Alligator Cracking";
+            confidence = Math.min(0.65 + density * 0.30, 0.94);
+          } else if (c.size > 60 && density > 0.10) {
+            label = "Block Cracking";
+            confidence = Math.min(0.60 + density * 0.30, 0.88);
+          } else if (c.size >= 20 && density > 0.06) {
+            label = "Surface Distress";
+            confidence = Math.min(0.55 + density * 0.25, 0.80);
+          }
+          
+          if (label !== "") {
+            var normX = c.minX / W;
+            var normY = c.minY / H;
+            var normW = Math.max(bw / W, 0.04);
+            var normH = Math.max(bh / H, 0.04);
             
-            // Classify defect type based on cluster geometry
-            var label = "";
-            var confidence = 0;
-            
-            if (c.avgBrightness < 20 && density > 0.3 && bboxW > 8 && bboxH > 8) {
-              // Very dark dense cluster = pothole
-              label = "Pothole";
-              confidence = Math.min(0.70 + density * 0.3, 0.96);
-            } else if (aspectRatio > 3.5 && bboxW > 30) {
-              // Very wide and narrow = longitudinal crack
-              label = "Longitudinal Crack";
-              confidence = Math.min(0.65 + (bboxW / W) * 0.3, 0.92);
-            } else if (aspectRatio < 0.3 && bboxH > 20) {
-              // Tall and narrow = transverse crack
-              label = "Transverse Crack";
-              confidence = Math.min(0.65 + (bboxH / H) * 0.3, 0.90);
-            } else if (c.size > 150 && density > 0.15) {
-              // Large area with many defect pixels = alligator cracking
-              label = "Alligator Cracking";
-              confidence = Math.min(0.60 + density * 0.35, 0.94);
-            } else if (c.size > 40 && density > 0.08) {
-              // Medium cluster = block cracking
-              label = "Block Cracking";
-              confidence = Math.min(0.55 + density * 0.4, 0.88);
-            } else if (c.size >= 12) {
-              // Small cluster = minor surface distress
-              label = "Surface Distress";
-              confidence = Math.min(0.50 + density * 0.3, 0.78);
-            }
-            
-            if (label !== "") {
-              // Normalize coordinates to 0.0-1.0 range
-              var normX = c.minX / W;
-              var normY = c.minY / H;
-              var normW = Math.max(bboxW / W, 0.03);
-              var normH = Math.max(bboxH / H, 0.03);
-              
-              onDefectDetected(label, confidence, normX, normY, normW, normH);
-              reported++;
-              lastDetectionTime = now;
-            }
+            onDefectDetected(label, confidence, normX, normY, normW, normH);
+            lastDetectionTime = now;
           }
         }
         
-        setTimeout(analyzeFrame, 400);
+        setTimeout(analyzeFrame, 500);
       }
       
       analyzeFrame();
