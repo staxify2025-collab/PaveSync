@@ -49,6 +49,11 @@ class _DashboardViewState extends State<DashboardView> {
   String _authBusinessName = '';
   String _errorMessage = '';
 
+  // Temporal frame smoothing buffer queue for pavement distress detections
+  final List<String> _distressFrameBuffer = [];
+  static const int _smoothingWindowSize = 8;
+  static const int _minConsecutiveDetections = 3;
+
   // Stripe controllers
   final _cardNumberController = TextEditingController(text: '4242 4242 4242 4242');
   final _expiryController = TextEditingController(text: '12/28');
@@ -643,6 +648,30 @@ class _DashboardViewState extends State<DashboardView> {
       quantity = 25.0 + Random().nextInt(50); // 25 to 75 ft wear
       severity = SeverityLevel.medium;
     } else {
+      return;
+    }
+
+    // --- TEMPORAL FRAME SMOOTHING BUFFER ---
+    // A distress type must be detected consistently across consecutive frames (sliding window queue)
+    // to be factored into the live PASER calculation. This filters out background noise,
+    // like residential porches or fences, which only flash in 1-2 frames.
+    _distressFrameBuffer.add(specType);
+    if (_distressFrameBuffer.length > _smoothingWindowSize) {
+      _distressFrameBuffer.removeAt(0);
+    }
+
+    final occurrences = _distressFrameBuffer.where((t) => t == specType).length;
+    if (occurrences < _minConsecutiveDetections) {
+      // Ignore single-frame anomaly or background noise
+      return;
+    }
+
+    // Prevent duplicate entries for the same defect within a brief 4-second travel window
+    final now = DateTime.now();
+    final recentDuplicates = _activeSegment!.distresses.where((d) {
+      return d.specificType == specType && now.difference(d.timestamp).inSeconds < 4;
+    });
+    if (recentDuplicates.isNotEmpty) {
       return;
     }
 

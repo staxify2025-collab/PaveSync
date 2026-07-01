@@ -122,6 +122,42 @@
       }
     };
 
+    // --- INFERENCE OPTIMIZATION: NON-MAXIMUM SUPPRESSION (NMS) USING IoU THRESHOLD ---
+    function calculateIoU(box1, box2) {
+      var x1 = Math.max(box1.x, box2.x);
+      var y1 = Math.max(box1.y, box2.y);
+      var x2 = Math.min(box1.x + box1.width, box2.x + box2.width);
+      var y2 = Math.min(box1.y + box1.height, box2.y + box2.height);
+      
+      var intersectionArea = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+      var box1Area = box1.width * box1.height;
+      var box2Area = box2.width * box2.height;
+      var unionArea = box1Area + box2Area - intersectionArea;
+      
+      return unionArea > 0 ? intersectionArea / unionArea : 0;
+    }
+
+    function performNMS(boxes, iouThreshold) {
+      // Sort boxes by confidence descending
+      boxes.sort(function(a, b) { return b.confidence - a.confidence; });
+      
+      var keep = [];
+      var suppressed = new Uint8Array(boxes.length);
+      
+      for (var i = 0; i < boxes.length; i++) {
+        if (suppressed[i]) continue;
+        keep.push(boxes[i]);
+        for (var j = i + 1; j < boxes.length; j++) {
+          if (suppressed[j]) continue;
+          var iou = calculateIoU(boxes[i], boxes[j]);
+          if (iou > iouThreshold) {
+            suppressed[j] = 1;
+          }
+        }
+      }
+      return keep;
+    }
+
     window.startVisualRoadAnalyzer = function(onDefectDetected, onError) {
       window.roadAnalyzerActive = true;
       
@@ -361,43 +397,74 @@
           
           clusters.sort(function(a, b) { return b.size - a.size; });
           
-          // Only report the single largest cluster per frame to avoid clutter
-          var c = clusters[0];
-          var bw = c.maxX - c.minX;
-          var bh = c.maxY - c.minY;
-          var aspect = bw / Math.max(bh, 1);
-          var density = c.size / Math.max(bw * bh, 1);
-          
-          var label = "";
-          var confidence = 0;
-          
-          if (c.avgBright < darkThreshold * 0.7 && density > 0.3 && bw > 10 && bh > 10) {
-            label = "Pothole";
-            confidence = Math.min(0.72 + density * 0.25, 0.96);
-          } else if (aspect > 4.0 && bw > 35) {
-            label = "Longitudinal Crack";
-            confidence = Math.min(0.68 + (bw / W) * 0.25, 0.92);
-          } else if (aspect < 0.25 && bh > 25) {
-            label = "Transverse Crack";
-            confidence = Math.min(0.68 + (bh / H) * 0.25, 0.90);
-          } else if (c.size > 200 && density > 0.18) {
-            label = "Alligator Cracking";
-            confidence = Math.min(0.65 + density * 0.30, 0.94);
-          } else if (c.size > 60 && density > 0.10) {
-            label = "Block Cracking";
-            confidence = Math.min(0.60 + density * 0.30, 0.88);
-          } else if (c.size >= 20 && density > 0.06) {
-            label = "Surface Distress";
-            confidence = Math.min(0.55 + density * 0.25, 0.80);
+          var candidateDetections = [];
+          for (var i = 0; i < clusters.length; i++) {
+            var c = clusters[i];
+            var bw = c.maxX - c.minX;
+            var bh = c.maxY - c.minY;
+            var aspect = bw / Math.max(bh, 1);
+            var density = c.size / Math.max(bw * bh, 1);
+            
+            var label = "";
+            var confidence = 0;
+            
+            if (c.avgBright < darkThreshold * 0.7 && density > 0.3 && bw > 10 && bh > 10) {
+              label = "Pothole";
+              confidence = Math.min(0.72 + density * 0.25, 0.96);
+            } else if (aspect > 4.0 && bw > 35) {
+              label = "Longitudinal Crack";
+              confidence = Math.min(0.68 + (bw / W) * 0.25, 0.92);
+            } else if (aspect < 0.25 && bh > 25) {
+              label = "Transverse Crack";
+              confidence = Math.min(0.68 + (bh / H) * 0.25, 0.90);
+            } else if (c.size > 200 && density > 0.18) {
+              label = "Alligator Cracking";
+              confidence = Math.min(0.65 + density * 0.30, 0.94);
+            } else if (c.size > 60 && density > 0.10) {
+              label = "Block Cracking";
+              confidence = Math.min(0.60 + density * 0.30, 0.88);
+            } else if (c.size >= 20 && density > 0.06) {
+              label = "Surface Distress";
+              confidence = Math.min(0.55 + density * 0.25, 0.80);
+            }
+            
+            if (label !== "") {
+              var normX = c.minX / W;
+              var normY = c.minY / H;
+              var normW = Math.max(bw / W, 0.04);
+              var normH = Math.max(bh / H, 0.04);
+              
+              // ── 1. HORIZON MASK / ROI FILTER ──
+              // Discard any bounding box predictions whose coordinates originate in the top 40% of the frame (y < 0.40)
+              // to filter out background objects (like residential porches, fences, or trees).
+              if (normY < 0.40) {
+                continue;
+              }
+              
+              // ── 2. INFERENCE OPTIMIZATION: raise minimum confidence (conf) to 0.45 ──
+              if (confidence >= 0.45) {
+                candidateDetections.push({
+                  label: label,
+                  confidence: confidence,
+                  x: normX,
+                  y: normY,
+                  width: normW,
+                  height: normH
+                });
+              }
+            }
           }
           
-          if (label !== "") {
-            var normX = c.minX / W;
-            var normY = c.minY / H;
-            var normW = Math.max(bw / W, 0.04);
-            var normH = Math.max(bh / H, 0.04);
-            
-            onDefectDetected(label, confidence, normX, normY, normW, normH);
+          // ── 3. INFERENCE OPTIMIZATION: NMS with IoU threshold of 0.40 ──
+          // Clean up overlapping redundant boxes
+          var filteredDetections = performNMS(candidateDetections, 0.40);
+          
+          // Report filtered detections
+          if (filteredDetections.length > 0) {
+            for (var idx = 0; idx < filteredDetections.length; idx++) {
+              var det = filteredDetections[idx];
+              onDefectDetected(det.label, det.confidence, det.x, det.y, det.width, det.height);
+            }
             lastDetectionTime = now;
           }
         }
