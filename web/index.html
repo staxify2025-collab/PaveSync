@@ -162,6 +162,14 @@
               var g = data[idx+1];
               var b = data[idx+2];
               
+              // Skip yellow painted lines (high red/green, low blue)
+              // and white lines (high red/green/blue)
+              var isYellow = (r > 120 && g > 110 && b < 100);
+              var isWhite = (r > 165 && g > 165 && b > 165);
+              if (isYellow || isWhite) {
+                continue;
+              }
+              
               var brightness = 0.299*r + 0.587*g + 0.114*b;
               
               if (brightness > 200) {
@@ -171,24 +179,32 @@
               }
               
               var nextIdx = idx + 4;
-              var nr = data[nextIdx];
-              var ng = data[nextIdx+1];
-              var nb = data[nextIdx+2];
-              var nextBrightness = 0.299*nr + 0.587*ng + 0.114*nb;
-              
-              if (Math.abs(brightness - nextBrightness) > 40) {
-                edgeCount++;
+              if (nextIdx < data.length) {
+                var nr = data[nextIdx];
+                var ng = data[nextIdx+1];
+                var nb = data[nextIdx+2];
+                
+                var nextIsYellow = (nr > 120 && ng > 110 && nb < 100);
+                var nextIsWhite = (nr > 165 && ng > 165 && nb > 165);
+                if (nextIsYellow || nextIsWhite) {
+                  continue;
+                }
+                
+                var nextBrightness = 0.299*nr + 0.587*ng + 0.114*nb;
+                if (Math.abs(brightness - nextBrightness) > 45) {
+                  edgeCount++;
+                }
               }
             }
           }
           
-          if (edgeCount > 180 && darkPixels > 80) {
+          if (edgeCount > 280 && darkPixels > 120) {
             onDefectDetected("Alligator Cracking", 0.88);
-          } else if (edgeCount > 90 && edgeCount <= 180) {
+          } else if (edgeCount > 130 && edgeCount <= 280 && darkPixels > 70) {
             onDefectDetected("Block Cracking", 0.79);
-          } else if (darkPixels > 220) {
+          } else if (darkPixels > 380) {
             onDefectDetected("Pothole", 0.94);
-          } else if (darkPixels > 120 && edgeCount < 50) {
+          } else if (darkPixels > 200 && edgeCount < 60) {
             onDefectDetected("Depression", 0.74);
           }
         }

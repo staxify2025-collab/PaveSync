@@ -150,8 +150,8 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
       onDefectDetected: (defectLabel, confidence) {
         if (mounted && _isScanning) {
           // Calculate random bounding box positions to simulate detection locations in bottom half
-          final randomX = 0.2 + (defectLabel.length % 5) * 0.1;
-          final randomY = 0.5 + (defectLabel.length % 3) * 0.1;
+          final randomX = 0.15 + (defectLabel.length % 5) * 0.11;
+          final randomY = 0.65 + (defectLabel.length % 3) * 0.07;
           
           final visualDetection = AiDetection(
             label: defectLabel,
@@ -218,81 +218,83 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: Stack(
-          children: [
-            // Live physical camera feed with mock painter fallback
-            Positioned.fill(
-              child: widget.videoUrl != null
-                  ? (kIsWeb
-                      ? HtmlElementView(
-                          viewType: 'video-player-${widget.videoUrl.hashCode}',
-                        )
-                      : Container(
-                          color: Colors.black.withOpacity(0.85),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.movie, size: 48, color: Colors.amber),
-                              const SizedBox(height: 12),
-                              Text(
-                                'Scanning Pre-recorded Video:\n${widget.videoUrl}',
-                                style: const TextStyle(color: Colors.white, fontSize: 12),
-                                textAlign: TextAlign.center,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return Stack(
+              children: [
+                // Live physical camera feed with mock painter fallback
+                Positioned.fill(
+                  child: widget.videoUrl != null
+                      ? (kIsWeb
+                          ? HtmlElementView(
+                              viewType: 'video-player-${widget.videoUrl.hashCode}',
+                            )
+                          : Container(
+                              color: Colors.black.withOpacity(0.85),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.movie, size: 48, color: Colors.amber),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    'Scanning Pre-recorded Video:\n${widget.videoUrl}',
+                                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                        ))
-                  : _isCameraInitialized && _cameraController != null
-                      ? FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: 100,
-                            height: 100 * _cameraController!.value.aspectRatio,
-                            child: CameraPreview(_cameraController!),
-                          ),
-                        )
-                      : CustomPaint(
-                          painter: RoadSimulationPainter(
-                            animationProgress: _animationController.value,
-                            isScanning: _isScanning,
-                          ),
-                        ),
-            ),
+                            ))
+                      : _isCameraInitialized && _cameraController != null
+                          ? FittedBox(
+                              fit: BoxFit.cover,
+                              child: SizedBox(
+                                width: 100,
+                                height: 100 * _cameraController!.value.aspectRatio,
+                                child: CameraPreview(_cameraController!),
+                              ),
+                            )
+                          : CustomPaint(
+                              painter: RoadSimulationPainter(
+                                animationProgress: _animationController.value,
+                                isScanning: _isScanning,
+                              ),
+                            ),
+                ),
 
-            // Live AI Bounding Box overlays
-            if (_isScanning)
-              ..._currentDetections.map((det) {
-                return Positioned(
-                  left: det.x * MediaQuery.of(context).size.width * 0.5,
-                  top: det.y * 400.0,
-                  width: det.width * MediaQuery.of(context).size.width * 0.5,
-                  height: det.height * 400.0,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                        color: _getLabelColor(det.label),
-                        width: 2,
-                      ),
-                      color: _getLabelColor(det.label).withOpacity(0.12),
-                    ),
-                    child: Align(
-                      alignment: Alignment.topLeft,
+                // Live AI Bounding Box overlays
+                if (_isScanning)
+                  ..._currentDetections.map((det) {
+                    return Positioned(
+                      left: det.x * constraints.maxWidth,
+                      top: det.y * constraints.maxHeight,
+                      width: det.width * constraints.maxWidth,
+                      height: det.height * constraints.maxHeight,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                        color: _getLabelColor(det.label),
-                        child: Text(
-                          '${det.label} ${(det.confidence * 100).toStringAsFixed(0)}%',
-                          style: const TextStyle(
-                            color: Colors.black,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: _getLabelColor(det.label),
+                            width: 2,
+                          ),
+                          color: _getLabelColor(det.label).withOpacity(0.12),
+                        ),
+                        child: Align(
+                          alignment: Alignment.topLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                            color: _getLabelColor(det.label),
+                            child: Text(
+                              '${det.label} ${(det.confidence * 100).toStringAsFixed(0)}%',
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ),
-                );
-              }),
+                    );
+                  }),
 
             // HUD Top Telemetry Panel
             Positioned(
@@ -466,10 +468,12 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
+        );
+      },
+    ),
+  ),
+);
+}
 
   Color _getLabelColor(String label) {
     if (label.contains('Pothole')) return Colors.red;
