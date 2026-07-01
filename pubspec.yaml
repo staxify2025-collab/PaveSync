@@ -55,6 +55,7 @@ dependencies:
   share_plus: ^9.0.0
   google_fonts: ^6.2.1
   pdf: ^3.10.8
+  universal_html: ^2.3.0
 
 dev_dependencies:
   flutter_test:

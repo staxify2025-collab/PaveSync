@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
 import 'package:geolocator/geolocator.dart';
 import '../models/distress.dart';
 import '../models/segment.dart';
@@ -27,6 +29,8 @@ class _DashboardViewState extends State<DashboardView> {
   String _searchQuery = '';
   bool _isVoiceListening = false;
   String _voiceStatus = 'Press mic to speak';
+  String? _uploadedVideoUrl;
+  String? _uploadedVideoName;
   
   RoadSegment? _activeSegment;
   List<RoadSegment> _segmentsList = [];
@@ -470,6 +474,45 @@ class _DashboardViewState extends State<DashboardView> {
     );
   }
 
+  void _pickVideoFile() {
+    if (!kIsWeb) {
+      // Mock upload for native/desktop test suites to prevent compiler and runtime issues
+      setState(() {
+        _uploadedVideoUrl = 'mock_video_url.mp4';
+        _uploadedVideoName = 'simulation_dashcam_route95.mp4';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Pre-recorded Scan: Simulation video loaded.'),
+          backgroundColor: Colors.amber[800],
+        ),
+      );
+      return;
+    }
+
+    final input = html.FileUploadInputElement()
+      ..accept = 'video/*'
+      ..click();
+
+    input.onChange.listen((event) {
+      final files = input.files;
+      if (files != null && files.isNotEmpty) {
+        final file = files[0];
+        final url = html.Url.createObjectUrl(file);
+        setState(() {
+          _uploadedVideoUrl = url;
+          _uploadedVideoName = file.name;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Uploaded Video: ${file.name} loaded successfully!'),
+            backgroundColor: Colors.amber[800],
+          ),
+        );
+      }
+    });
+  }
+
   Future<void> _getCurrentLocation(bool isStart) async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
@@ -841,6 +884,7 @@ class _DashboardViewState extends State<DashboardView> {
               children: [
                 CameraInspectionView(
                   isDriveMode: _isDriveMode,
+                  videoUrl: _uploadedVideoUrl,
                   onDefectDetected: _handleVisionDefectDetected,
                 ),
                 Positioned(
@@ -1188,6 +1232,57 @@ class _DashboardViewState extends State<DashboardView> {
                                   const SizedBox(height: 12),
                                 ],
 
+                                // Pre-recorded video selector
+                                if (_uploadedVideoName == null)
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: Colors.amber[800],
+                                        side: BorderSide(color: Colors.amber[800]!.withOpacity(0.5)),
+                                        padding: const EdgeInsets.symmetric(vertical: 8),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      icon: const Icon(Icons.video_library, size: 16),
+                                      label: const Text('Upload Pre-recorded Video', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                      onPressed: _pickVideoFile,
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.movie, size: 16, color: Colors.amber),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            _uploadedVideoName!,
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF101828), fontWeight: FontWeight.w500),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        IconButton(
+                                          constraints: const BoxConstraints(),
+                                          padding: EdgeInsets.zero,
+                                          icon: const Icon(Icons.close, size: 14, color: Colors.red),
+                                          onPressed: () {
+                                            setState(() {
+                                              _uploadedVideoUrl = null;
+                                              _uploadedVideoName = null;
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                const SizedBox(height: 12),
+
                                 SizedBox(
                                   width: double.infinity,
                                   child: ElevatedButton(
@@ -1365,6 +1460,7 @@ class _DashboardViewState extends State<DashboardView> {
                           : _isScanning
                               ? CameraInspectionView(
                                   isDriveMode: _isDriveMode,
+                                  videoUrl: _uploadedVideoUrl,
                                   onDefectDetected: _handleVisionDefectDetected,
                                 )
                               : ReportGeneratorView(
@@ -1549,6 +1645,57 @@ class _DashboardViewState extends State<DashboardView> {
                   ),
                   const SizedBox(height: 12),
                 ],
+
+                // Pre-recorded video selector
+                if (_uploadedVideoName == null)
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.amber[800],
+                        side: BorderSide(color: Colors.amber[800]!.withOpacity(0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      icon: const Icon(Icons.video_library, size: 16),
+                      label: const Text('Upload Pre-recorded Video', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                      onPressed: _pickVideoFile,
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.movie, size: 16, color: Colors.amber),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _uploadedVideoName!,
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF101828), fontWeight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          constraints: const BoxConstraints(),
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.close, size: 14, color: Colors.red),
+                          onPressed: () {
+                            setState(() {
+                              _uploadedVideoUrl = null;
+                              _uploadedVideoName = null;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
 
                 SizedBox(
                   width: double.infinity,

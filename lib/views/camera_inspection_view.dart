@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
 import 'package:camera/camera.dart';
 import '../services/ai_vision_service.dart';
 import '../services/vibration_service.dart';
 import '../services/vision_analyzer_service.dart';
+import '../utils/platform_view_helper.dart';
 
 class CameraInspectionView extends StatefulWidget {
   final Function(AiDetection) onDefectDetected;
   final bool isDriveMode; // true = PASER Drive HUD, false = Walk PCI Mode
+  final String? videoUrl;
 
   const CameraInspectionView({
     super.key,
     required this.onDefectDetected,
     this.isDriveMode = true,
+    this.videoUrl,
   });
 
   @override
@@ -39,6 +44,13 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
     _isScanning = true; // Auto-start scanning on load!
     _simulatedSpeed = widget.isDriveMode ? 35.0 : 2.5;
     
+    if (kIsWeb && widget.videoUrl != null) {
+      registerVideoPlayerFactory(
+        'video-player-${widget.videoUrl.hashCode}',
+        widget.videoUrl!,
+      );
+    }
+    
     _visionService = AiVisionService();
     _visionService.startLiveScanner(); // Start the AI service!
     
@@ -59,7 +71,9 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
       duration: const Duration(seconds: 2),
     )..repeat();
 
-    _initCamera();
+    if (widget.videoUrl == null) {
+      _initCamera();
+    }
     _startVibrationSensor();
     _startVisualRoadAnalyzer();
   }
@@ -208,21 +222,41 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
           children: [
             // Live physical camera feed with mock painter fallback
             Positioned.fill(
-              child: _isCameraInitialized && _cameraController != null
-                  ? FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: 100,
-                        height: 100 * _cameraController!.value.aspectRatio,
-                        child: CameraPreview(_cameraController!),
-                      ),
-                    )
-                  : CustomPaint(
-                      painter: RoadSimulationPainter(
-                        animationProgress: _animationController.value,
-                        isScanning: _isScanning,
-                      ),
-                    ),
+              child: widget.videoUrl != null
+                  ? (kIsWeb
+                      ? HtmlElementView(
+                          viewType: 'video-player-${widget.videoUrl.hashCode}',
+                        )
+                      : Container(
+                          color: Colors.black.withOpacity(0.85),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.movie, size: 48, color: Colors.amber),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Scanning Pre-recorded Video:\n${widget.videoUrl}',
+                                style: const TextStyle(color: Colors.white, fontSize: 12),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ))
+                  : _isCameraInitialized && _cameraController != null
+                      ? FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: 100,
+                            height: 100 * _cameraController!.value.aspectRatio,
+                            child: CameraPreview(_cameraController!),
+                          ),
+                        )
+                      : CustomPaint(
+                          painter: RoadSimulationPainter(
+                            animationProgress: _animationController.value,
+                            isScanning: _isScanning,
+                          ),
+                        ),
             ),
 
             // Live AI Bounding Box overlays
