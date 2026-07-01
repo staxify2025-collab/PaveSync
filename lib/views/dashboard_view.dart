@@ -699,9 +699,9 @@ class _DashboardViewState extends State<DashboardView> {
     if (_activeSegment == null) return;
 
     if (_isDriveMode) {
-      // Simple dynamic PASER score based on distress counts
+      // Simple dynamic PASER score based on actual pavement distress counts (excluding striping/paint markings)
       int basePaser = 10;
-      int distressCount = _activeSegment!.distresses.length;
+      int distressCount = _activeSegment!.distresses.where((d) => d.category == DistressCategory.pavement).length;
       basePaser -= (distressCount ~/ 2);
       _activeSegment!.paserScore = basePaser.clamp(1, 10);
     } else {

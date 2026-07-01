@@ -158,6 +158,58 @@
       return keep;
     }
 
+    // --- JOINT VS. CRACK DEVIATION FILTER: linear regression residuals ---
+    function calculateJointDeviation(pixels) {
+      // Group pixels by y coordinate to find average x for each row
+      var yMap = {};
+      for (var i = 0; i < pixels.length; i++) {
+        var p = pixels[i];
+        if (!yMap[p.y]) {
+          yMap[p.y] = [];
+        }
+        yMap[p.y].push(p.x);
+      }
+      
+      var points = [];
+      for (var yKey in yMap) {
+        var xs = yMap[yKey];
+        var avgX = 0;
+        for (var j = 0; j < xs.length; j++) {
+          avgX += xs[j];
+        }
+        avgX /= xs.length;
+        points.push({x: avgX, y: parseInt(yKey)});
+      }
+      
+      if (points.length < 5) return 999; // Not enough points to assess linearity
+      
+      // Linear regression fit: x = slope * y + intercept
+      var sumY = 0, sumX = 0, sumYY = 0, sumXY = 0;
+      var N = points.length;
+      for (var i = 0; i < N; i++) {
+        sumY += points[i].y;
+        sumX += points[i].x;
+        sumYY += points[i].y * points[i].y;
+        sumXY += points[i].x * points[i].y;
+      }
+      
+      var denom = (N * sumYY - sumY * sumY);
+      if (denom === 0) return 0; // Vertical paving joint with zero deviation
+      
+      var slope = (N * sumXY - sumX * sumY) / denom;
+      var intercept = (sumX - slope * sumY) / N;
+      
+      // Compute Root Mean Square Error (RMSE) of horizontal residuals
+      var sumSqResiduals = 0;
+      for (var i = 0; i < N; i++) {
+        var expectedX = slope * points[i].y + intercept;
+        var residual = points[i].x - expectedX;
+        sumSqResiduals += residual * residual;
+      }
+      
+      return Math.sqrt(sumSqResiduals / N);
+    }
+
     window.startVisualRoadAnalyzer = function(onDefectDetected, onError) {
       window.roadAnalyzerActive = true;
       
@@ -426,6 +478,41 @@
             } else if (c.size >= 20 && density > 0.06) {
               label = "Surface Distress";
               confidence = Math.min(0.55 + density * 0.25, 0.80);
+            }
+            
+            if (label !== "") {
+              var paintPixelCount = 0;
+              var totalClusterPixels = 0;
+              var clusterPixelsList = [];
+              
+              for (var cy = c.minY; cy <= c.maxY; cy++) {
+                for (var cx = c.minX; cx <= c.maxX; cx++) {
+                  if (defectMask[cy * W + cx] === 1) {
+                    var cidx = (cy * W + cx) * 4;
+                    var cr = data[cidx], cg = data[cidx+1], cb = data[cidx+2];
+                    if (isPaint(cr, cg, cb)) {
+                      paintPixelCount++;
+                    }
+                    clusterPixelsList.push({x: cx, y: cy});
+                    totalClusterPixels++;
+                  }
+                }
+              }
+              
+              var paintRatio = paintPixelCount / Math.max(totalClusterPixels, 1);
+              if (paintRatio > 0.12) {
+                // Reclassify as paint/striping marking (excluded from PASER calculation)
+                label = "Faded Center Line";
+                confidence = 0.85;
+              }
+              
+              if (label === "Longitudinal Crack" || label === "Transverse Crack" || label === "Surface Distress") {
+                var deviation = calculateJointDeviation(clusterPixelsList);
+                if (deviation < 1.5) {
+                  // Standard paving construction joint running parallel to travel - discard
+                  label = "";
+                }
+              }
             }
             
             if (label !== "") {
