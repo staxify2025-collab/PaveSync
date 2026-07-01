@@ -52,7 +52,10 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
     }
     
     _visionService = AiVisionService();
-    _visionService.startLiveScanner(); // Start the AI service!
+    // Only start mock scanner if NO real video/camera is active
+    if (widget.videoUrl == null) {
+      _visionService.startLiveScanner();
+    }
     
     _visionService.detectionStream.listen((detections) {
       if (mounted && _isScanning) {
@@ -147,19 +150,15 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
 
   void _startVisualRoadAnalyzer() {
     VisionAnalyzerService.startAnalyzing(
-      onDefectDetected: (defectLabel, confidence) {
+      onDefectDetected: (defectLabel, confidence, x, y, w, h) {
         if (mounted && _isScanning) {
-          // Calculate random bounding box positions to simulate detection locations in bottom half
-          final randomX = 0.15 + (defectLabel.length % 5) * 0.11;
-          final randomY = 0.65 + (defectLabel.length % 3) * 0.07;
-          
           final visualDetection = AiDetection(
             label: defectLabel,
             confidence: confidence,
-            x: randomX,
-            y: randomY,
-            width: 0.25,
-            height: 0.18,
+            x: x,
+            y: y,
+            width: w,
+            height: h,
           );
           
           setState(() {
@@ -184,7 +183,9 @@ class _CameraInspectionViewState extends State<CameraInspectionView> with Single
     setState(() {
       _isScanning = !_isScanning;
       if (_isScanning) {
-        _visionService.startLiveScanner();
+        if (widget.videoUrl == null) {
+          _visionService.startLiveScanner();
+        }
         _startVibrationSensor();
         _startVisualRoadAnalyzer();
         _simulatedSpeed = widget.isDriveMode ? 35.0 : 2.5;
